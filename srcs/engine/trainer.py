@@ -1,0 +1,100 @@
+import os
+import time
+
+import numpy as np
+import torch
+import torch.nn as nn
+from torch.amp import GradScaler, autocast
+
+from srcs.data.hcp_dataset import make_loaders
+from srcs.models.autoencoder import AutoEncoder2D
+from srcs.utils.ens_dir import ensure_dir
+from srcs.utils.device import get_device
+from srcs.utils.seed import set_seed
+
+
+def run_val(model, val_loader, criterion, device, use_amp):
+    model.eval()
+    losses = []
+    with torch.no_grad():
+        for batch in val_loader:
+            x = batch["x"].to(device)
+            y = batch["y"].to(device)
+
+            with autocast(device_type=device.type, enabled=use_amp):
+                y_hat = model(x)
+                loss = criterion(y_hat, y)
+
+            losses.append(loss.item())
+    return float(np.mean(losses)) if losses else float("inf")
+
+
+def train(cfg: dict):
+    set_seed(cfg["train"]["seed"])
+    device = get_device()
+    use_amp = bool(cfg["train"]["amp"] and device.type == "cuda")
+
+    ensure_dir(cfg["train"]["output_dir"])
+
+    train_loader, val_loader, n_all, n_train, n_val = make_loaders(cfg, device.type)
+    print(f"Found paired subjects: {n_all} | train: {n_train} | val: {n_val}")
+    print(f"Train slice samples: {len(train_loader.dataset)} | Val slice samples: {len(val_loader.dataset)}")
+
+    model = AutoEncoder2D(**cfg["model"]).to(device)
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=cfg["train"]["learning_rate"],
+        weight_decay=cfg["train"]["weight_decay"],
+    )
+    criterion = nn.MSELoss()
+    scaler = GradScaler(device.type, enabled=use_amp)
+
+    best_val = float("inf")
+    best_path = os.path.join(cfg["train"]["output_dir"], "best_ae25d_t1t2.pt")
+
+    for epoch in range(1, cfg["train"]["epochs"] + 1):
+        t0 = time.time()
+        model.train()
+        train_losses = []
+
+        for batch in train_loader:
+            x = batch["x"].to(device)
+            y = batch["y"].to(device)
+
+            optimizer.zero_grad(set_to_none=True)
+
+            with autocast(device_type=device.type, enabled=use_amp):
+                y_hat = model(x)
+                loss = criterion(y_hat, y)
+
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+
+            train_losses.append(loss.item())
+
+        train_loss = float(np.mean(train_losses)) if train_losses else float("inf")
+        val_loss = run_val(model, val_loader, criterion, device, use_amp)
+        dt = time.time() - t0
+
+        print(
+            f"Epoch {epoch:03d}/{cfg['train']['epochs']} | "
+            f"train MSE: {train_loss:.6f} | val MSE: {val_loss:.6f} | {dt:.1f}s"
+        )
+
+        if val_loss < best_val:
+            best_val = val_loss
+            torch.save(
+                {
+                    "epoch": epoch,
+                    "model_state": model.state_dict(),
+                    "opt_state": optimizer.state_dict(),
+                    "val_loss": best_val,
+                    "model_cfg": cfg["model"],
+                    "data_cfg": cfg["data"],
+                },
+                best_path,
+            )
+            print(f"  saved best: {best_path} (val {best_val:.6f})")
+
+    print("Training done. Best val:", best_val)

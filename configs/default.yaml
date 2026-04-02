@@ -1,0 +1,23 @@
+data:
+  root: "/cluster/home/sowada23/MedAI/UAD/DATA/HCP"
+  t1_name: "T1w_acpc_dc_restore_brain.nii.gz"
+  t2_name: "T2w_acpc_dc_restore_brain.nii.gz"
+  val_frac: 0.2
+  target_spatial_size: [192, 160]
+  slice_axis: 0
+  num_adjacent_slices: 3
+
+train:
+  seed: 42
+  output_dir: "./Output"
+  batch_size: 8
+  num_workers: 4
+  learning_rate: 1.0e-4
+  weight_decay: 1.0e-4
+  epochs: 5
+  amp: true
+
+model:
+  in_channels: 6
+  base: 32
+  out_channels: 2
