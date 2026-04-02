@@ -5,7 +5,7 @@ import sys
 sys.path.append(os.path.abspath("."))
 
 from srcs.engine.trainer import train
-from srcs.utils.load import load_config
+from srcs.utils.config import load_config
 
 
 def main():
