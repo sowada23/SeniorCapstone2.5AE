@@ -1,5 +1,5 @@
 data:
-  root: "/cluster/home/sowada23/MedAI/UAD/DATA/HCP_numpy"
+  root: "../../DATA/HCP_numpy"
   t1_name: "t1.npy"
   t2_name: "t2.npy"
   val_frac: 0.1
@@ -13,7 +13,7 @@ train:
   seed: 42
   output_dir: "./Output"
   batch_size: 8
-  num_workers: 4
+  num_workers: 0
   persistent_workers: true
   prefetch_factor: 2
   learning_rate: 1.0e-4

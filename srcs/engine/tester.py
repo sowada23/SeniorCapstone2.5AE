@@ -1,6 +1,6 @@
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
 from torch.amp import autocast
 
 from srcs.data.hcp_dataset import make_loaders
@@ -9,14 +9,14 @@ from srcs.utils.device import get_device
 from srcs.utils.seed import set_seed
 
 
-
 def test(cfg: dict, checkpoint_path: str):
     device = get_device()
     set_seed(cfg["train"]["seed"])
-
     use_amp = bool(cfg["train"]["amp"] and device.type == "cuda")
 
-    _, _, test_loader, _, _, _, _ = make_loaders(cfg, device.type)
+    _, _, test_loader, _, _, _, n_test = make_loaders(cfg, device.type)
+    if test_loader is None or n_test == 0:
+        raise RuntimeError("Test split is empty. Check test_frac and dataset size.")
 
     ckpt = torch.load(checkpoint_path, map_location=device)
     model = AutoEncoder2D(**ckpt["model_cfg"]).to(device)

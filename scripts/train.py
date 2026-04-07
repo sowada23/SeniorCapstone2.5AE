@@ -1,6 +1,7 @@
 import argparse
 import os
 import sys
+import traceback
 
 sys.path.append(os.path.abspath("."))
 
@@ -13,8 +14,12 @@ def main():
     parser.add_argument("--config", type=str, default="configs/default.yaml")
     args = parser.parse_args()
 
-    cfg = load_config(args.config)
-    train(cfg)
+    try:
+        cfg = load_config(args.config)
+        train(cfg)
+    except Exception:
+        traceback.print_exc()
+        raise
 
 
 if __name__ == "__main__":

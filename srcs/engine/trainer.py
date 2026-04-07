@@ -14,17 +14,18 @@ from srcs.utils.seed import set_seed
 
 
 def run_val(model, val_loader, criterion, device, use_amp):
+    if val_loader is None:
+        return float("nan")
+
     model.eval()
     losses = []
     with torch.no_grad():
         for batch in val_loader:
             x = batch["x"].to(device, non_blocking=True)
             y = batch["y"].to(device, non_blocking=True)
-
             with autocast(device_type=device.type, enabled=use_amp):
                 y_hat = model(x)
                 loss = criterion(y_hat, y)
-
             losses.append(loss.item())
     return float(np.mean(losses)) if losses else float("inf")
 
@@ -39,9 +40,18 @@ def train(cfg: dict):
 
     ensure_dir(cfg["train"]["output_dir"])
 
+    print(f"Using device: {device}")
+    print(f"Scanning dataset root: {cfg['data']['root']}")
+    print("Building train/val/test loaders...")
+
     train_loader, val_loader, test_loader, n_all, n_train, n_val, n_test = make_loaders(cfg, device.type)
-    print(f"Found paired subjects: {n_all} | train: {n_train} | val: {n_val}")
-    print(f"Train slice samples: {len(train_loader.dataset)} | Val slice samples: {len(val_loader.dataset)}")
+
+    print(f"Found paired subjects: {n_all} | train: {n_train} | val: {n_val} | test: {n_test}")
+    print(f"Train slice samples: {len(train_loader.dataset)}")
+    if val_loader is not None:
+        print(f"Val slice samples: {len(val_loader.dataset)}")
+    if test_loader is not None:
+        print(f"Test slice samples: {len(test_loader.dataset)}")
 
     model = AutoEncoder2D(**cfg["model"]).to(device)
     optimizer = torch.optim.AdamW(
@@ -60,12 +70,11 @@ def train(cfg: dict):
         model.train()
         train_losses = []
 
-        for batch in train_loader:
+        for batch_idx, batch in enumerate(train_loader, start=1):
             x = batch["x"].to(device, non_blocking=True)
             y = batch["y"].to(device, non_blocking=True)
 
             optimizer.zero_grad(set_to_none=True)
-
             with autocast(device_type=device.type, enabled=use_amp):
                 y_hat = model(x)
                 loss = criterion(y_hat, y)
@@ -76,6 +85,9 @@ def train(cfg: dict):
 
             train_losses.append(loss.item())
 
+            if batch_idx == 1:
+                print(f"Epoch {epoch:03d}: first batch OK | x={tuple(x.shape)} y={tuple(y.shape)}")
+
         train_loss = float(np.mean(train_losses)) if train_losses else float("inf")
         val_loss = run_val(model, val_loader, criterion, device, use_amp)
         dt = time.time() - t0
@@ -85,7 +97,7 @@ def train(cfg: dict):
             f"train MSE: {train_loss:.6f} | val MSE: {val_loss:.6f} | {dt:.1f}s"
         )
 
-        if val_loss < best_val:
+        if val_loader is not None and val_loss < best_val:
             best_val = val_loss
             torch.save(
                 {
@@ -98,6 +110,6 @@ def train(cfg: dict):
                 },
                 best_path,
             )
-            print(f"  saved best: {best_path} (val {best_val:.6f})")
+            print(f"saved best: {best_path} (val {best_val:.6f})")
 
-    print("Training done. Best val:", best_val)
+    print("Training done.")
