@@ -7,7 +7,7 @@ data:
   target_spatial_size: [192, 160]
   slice_axis: 0
   num_adjacent_slices: 3
-  cache_subjects: true
+  cache_subjects: false
 
 train:
   seed: 42
