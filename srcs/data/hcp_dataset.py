@@ -25,7 +25,7 @@ def build_file_list(root: str, t1_name: str, t2_name: str):
 
 
 class HCPDataset:
-    def __init__(self, files, target_spatial_size, slice_axis=0, num_adjacent_slices=3):
+    def __init__(self, files, target_spatial_size, slice_axis=0, num_adjacent_slices=3, cache_subjects=True):
         if num_adjacent_slices % 2 == 0:
             raise ValueError("num_adjacent_slices must be odd, e.g. 3 or 5")
 
