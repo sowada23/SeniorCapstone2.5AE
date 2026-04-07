@@ -1,36 +1,42 @@
 import torch
+import torch.nn as nn
+import numpy as np
+from torch.amp import autocast
 
 from srcs.data.hcp_dataset import make_loaders
 from srcs.models.autoencoder import AutoEncoder2D
 from srcs.utils.device import get_device
+from srcs.utils.seed import set_seed
 
 
-def compute_anomaly_map(y, y_hat):
-    err = (y - y_hat) ** 2
-    amap = err.mean(dim=1, keepdim=True)
-    return amap
 
-
-def test_once(cfg: dict, ckpt_path: str):
+def test(cfg: dict, checkpoint_path: str):
     device = get_device()
-    _, val_loader, _, _, _ = make_loaders(cfg, device.type)
+    set_seed(cfg["train"]["seed"])
 
-    checkpoint = torch.load(ckpt_path, map_location=device)
-    model_cfg = checkpoint.get("model_cfg", cfg["model"])
+    use_amp = bool(cfg["train"]["amp"] and device.type == "cuda")
 
-    model = AutoEncoder2D(**model_cfg).to(device)
-    model.load_state_dict(checkpoint["model_state"])
+    _, _, test_loader, _, _, _, _ = make_loaders(cfg, device.type)
+
+    ckpt = torch.load(checkpoint_path, map_location=device)
+    model = AutoEncoder2D(**ckpt["model_cfg"]).to(device)
+    model.load_state_dict(ckpt["model_state"])
     model.eval()
 
-    with torch.no_grad():
-        batch = next(iter(val_loader))
-        x = batch["x"].to(device)
-        y = batch["y"].to(device)
-        y_hat = model(x)
-        amap = compute_anomaly_map(y, y_hat)
+    criterion = nn.MSELoss()
+    losses = []
 
-    print("x:", tuple(x.shape))
-    print("y:", tuple(y.shape))
-    print("y_hat:", tuple(y_hat.shape))
-    print("amap:", tuple(amap.shape))
-    print("checkpoint val_loss:", checkpoint.get("val_loss"))
+    with torch.no_grad():
+        for batch in test_loader:
+            x = batch["x"].to(device, non_blocking=True)
+            y = batch["y"].to(device, non_blocking=True)
+
+            with autocast(device_type=device.type, enabled=use_amp):
+                y_hat = model(x)
+                loss = criterion(y_hat, y)
+
+            losses.append(loss.item())
+
+    test_loss = float(np.mean(losses)) if losses else float("inf")
+    print(f"Test MSE: {test_loss:.6f}")
+    return test_loss

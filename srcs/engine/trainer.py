@@ -18,8 +18,8 @@ def run_val(model, val_loader, criterion, device, use_amp):
     losses = []
     with torch.no_grad():
         for batch in val_loader:
-            x = batch["x"].to(device)
-            y = batch["y"].to(device)
+            x = batch["x"].to(device, non_blocking=True)
+            y = batch["y"].to(device, non_blocking=True)
 
             with autocast(device_type=device.type, enabled=use_amp):
                 y_hat = model(x)
@@ -34,9 +34,12 @@ def train(cfg: dict):
     device = get_device()
     use_amp = bool(cfg["train"]["amp"] and device.type == "cuda")
 
+    if device.type == "cuda":
+        torch.backends.cudnn.benchmark = bool(cfg["train"].get("cudnn_benchmark", True))
+
     ensure_dir(cfg["train"]["output_dir"])
 
-    train_loader, val_loader, n_all, n_train, n_val = make_loaders(cfg, device.type)
+    train_loader, val_loader, test_loader, n_all, n_train, n_val, n_test = make_loaders(cfg, device.type)
     print(f"Found paired subjects: {n_all} | train: {n_train} | val: {n_val}")
     print(f"Train slice samples: {len(train_loader.dataset)} | Val slice samples: {len(val_loader.dataset)}")
 
@@ -58,8 +61,8 @@ def train(cfg: dict):
         train_losses = []
 
         for batch in train_loader:
-            x = batch["x"].to(device)
-            y = batch["y"].to(device)
+            x = batch["x"].to(device, non_blocking=True)
+            y = batch["y"].to(device, non_blocking=True)
 
             optimizer.zero_grad(set_to_none=True)
 

@@ -4,7 +4,7 @@ import sys
 
 sys.path.append(os.path.abspath("."))
 
-from srcs.engine.tester import test_once
+from srcs.engine.tester import test
 from srcs.utils.config import load_config
 
 
@@ -15,7 +15,7 @@ def main():
     args = parser.parse_args()
 
     cfg = load_config(args.config)
-    test_once(cfg, args.ckpt)
+    test(cfg, args.ckpt)
 
 
 if __name__ == "__main__":
