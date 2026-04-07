@@ -25,7 +25,7 @@ class HCPDataset(Dataset):
         target_spatial_size,
         slice_axis=0,
         num_adjacent_slices=3,
-        cache_subjects=True,
+        cache_subjects=False,
     ):
         if num_adjacent_slices % 2 == 0:
             raise ValueError("num_adjacent_slices must be odd, e.g. 3 or 5")
@@ -37,9 +37,10 @@ class HCPDataset(Dataset):
         self.num_adjacent_slices = num_adjacent_slices
         self.radius = num_adjacent_slices // 2
         self.cache_subjects = cache_subjects
+        self.target_depth = 160
 
         self.array_tf = Compose([
-            ResizeWithPadOrCropd(keys=["t1", "t2"], spatial_size=(160, *target_spatial_size)),
+            ResizeWithPadOrCropd(keys=["t1", "t2"], spatial_size=(self.target_depth, *target_spatial_size)),
             NormalizeIntensityd(keys=["t1", "t2"], nonzero=True, channel_wise=True),
         ])
 
@@ -65,14 +66,11 @@ class HCPDataset(Dataset):
 
             if self.cache_subjects:
                 t1, t2 = self._load_subject(item)
-                depth = t1.shape[self.slice_axis]
                 self.subjects.append({"t1": t1, "t2": t2, "paths": item})
             else:
-                t1, _ = self._load_subject(item)
-                depth = t1.shape[self.slice_axis]
                 self.subjects.append({"paths": item})
 
-            for z in range(self.radius, depth - self.radius):
+            for z in range(self.radius, self.target_depth - self.radius):
                 self.samples.append({"subject_idx": subject_idx, "z": z})
 
     def __len__(self):
@@ -139,7 +137,7 @@ def make_loaders(cfg: dict, device_type: str):
         target_spatial_size=data_cfg["target_spatial_size"],
         slice_axis=data_cfg["slice_axis"],
         num_adjacent_slices=data_cfg["num_adjacent_slices"],
-        cache_subjects=data_cfg.get("cache_subjects", True),
+        cache_subjects=data_cfg.get("cache_subjects", False),
     )
 
     train_ds = HCPDataset(train_files, **ds_kwargs)
@@ -155,23 +153,8 @@ def make_loaders(cfg: dict, device_type: str):
     if train_cfg["num_workers"] > 0:
         loader_kwargs["prefetch_factor"] = train_cfg["prefetch_factor"]
 
-    train_loader = DataLoader(
-        train_ds,
-        batch_size=train_cfg["batch_size"],
-        shuffle=True,
-        **loader_kwargs,
-    )
-    val_loader = DataLoader(
-        val_ds,
-        batch_size=1,
-        shuffle=False,
-        **loader_kwargs,
-    ) if val_ds is not None else None
-    test_loader = DataLoader(
-        test_ds,
-        batch_size=1,
-        shuffle=False,
-        **loader_kwargs,
-    ) if test_ds is not None else None
+    train_loader = DataLoader(train_ds, batch_size=train_cfg["batch_size"], shuffle=True, **loader_kwargs)
+    val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, **loader_kwargs) if val_ds is not None else None
+    test_loader = DataLoader(test_ds, batch_size=1, shuffle=False, **loader_kwargs) if test_ds is not None else None
 
     return train_loader, val_loader, test_loader, n_all, len(train_files), len(val_files), len(test_files)
