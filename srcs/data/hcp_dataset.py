@@ -3,11 +3,11 @@ import os
 import random
 
 import numpy as np
+import torch
 from monai.data import DataLoader
 from monai.transforms import (
     Compose,
     EnsureChannelFirstd,
-    LoadImaged,
     NormalizeIntensityd,
     ResizeWithPadOrCropd,
 )
@@ -25,7 +25,7 @@ def build_file_list(root: str, t1_name: str, t2_name: str):
 
 
 class HCPDataset:
-    def __init__(self, files, target_spatial_size, slice_axis=0, num_adjacent_slices=3):
+    def __init__(self, files, target_spatial_size, slice_axis=0, num_adjacent_slices=3, cache_subjects=True):
         if num_adjacent_slices % 2 == 0:
             raise ValueError("num_adjacent_slices must be odd, e.g. 3 or 5")
 
@@ -33,26 +33,45 @@ class HCPDataset:
         self.slice_axis = slice_axis
         self.num_adjacent_slices = num_adjacent_slices
         self.radius = num_adjacent_slices // 2
+        self.cache_subjects = cache_subjects
 
-        self.subject_tf = Compose([
-            LoadImaged(keys=["t1", "t2"]),
+        self.array_tf = Compose([
             EnsureChannelFirstd(keys=["t1", "t2"]),
             ResizeWithPadOrCropd(keys=["t1", "t2"], spatial_size=tuple([160, *target_spatial_size])),
             NormalizeIntensityd(keys=["t1", "t2"], nonzero=True, channel_wise=True),
         ])
 
+        self.subjects = []
         self.samples = []
         self._build_index()
 
+    def _load_subject(self, item):
+        t1 = np.load(item["t1"]).astype(np.float32)
+        t2 = np.load(item["t2"]).astype(np.float32)
+
+        data = self.array_tf({"t1": t1, "t2": t2})
+        t1 = np.asarray(data["t1"][0], dtype=np.float32)
+        t2 = np.asarray(data["t2"][0], dtype=np.float32)
+        return t1, t2
+
     def _build_index(self):
         for item in self.files:
-            data = self.subject_tf(item)
-            t1 = data["t1"][0]
+            t1, t2 = self._load_subject(item)
             depth = t1.shape[self.slice_axis]
+            subject_idx = len(self.subjects)
+
+            if self.cache_subjects:
+                self.subjects.append({
+                    "t1": t1,
+                    "t2": t2,
+                    "paths": item,
+                })
+            else:
+                self.subjects.append({"paths": item})
 
             for z in range(self.radius, depth - self.radius):
                 self.samples.append({
-                    "item": item,
+                    "subject_idx": subject_idx,
                     "z": z,
                 })
 
@@ -62,30 +81,32 @@ class HCPDataset:
     def _extract_stack(self, vol, z):
         if self.slice_axis != 0:
             raise NotImplementedError("This example assumes axial slicing on axis 0.")
-
-        stack = vol[z - self.radius:z + self.radius + 1]
-        return stack
+        return vol[z - self.radius:z + self.radius + 1]
 
     def __getitem__(self, idx):
         sample = self.samples[idx]
-        data = self.subject_tf(sample["item"])
+        subject = self.subjects[sample["subject_idx"]]
 
-        t1 = data["t1"][0].astype(np.float32)
-        t2 = data["t2"][0].astype(np.float32)
+        if self.cache_subjects:
+            t1 = subject["t1"]
+            t2 = subject["t2"]
+        else:
+            t1, t2 = self._load_subject(subject["paths"])
+
         z = sample["z"]
 
         t1_stack = self._extract_stack(t1, z)
         t2_stack = self._extract_stack(t2, z)
 
-        x = np.concatenate([t1_stack, t2_stack], axis=0)
-        y = np.stack([t1[z], t2[z]], axis=0)
+        x = torch.from_numpy(np.concatenate([t1_stack, t2_stack], axis=0))
+        y = torch.from_numpy(np.stack([t1[z], t2[z]], axis=0))
 
         return {
             "x": x,
             "y": y,
             "z": z,
-            "t1_path": sample["item"]["t1"],
-            "t2_path": sample["item"]["t2"],
+            "t1_path": subject["paths"]["t1"],
+            "t2_path": subject["paths"]["t2"],
         }
 
 
@@ -102,36 +123,59 @@ def make_loaders(cfg: dict, device_type: str):
         raise RuntimeError(f"No paired T1/T2 files found under: {data_cfg['root']}")
 
     random.shuffle(files)
-    n_val = int(len(files) * data_cfg["val_frac"])
-    val_files = files[:n_val]
-    train_files = files[n_val:]
+
+    n_total = len(files)
+    n_val = int(n_total * data_cfg["val_frac"])
+    n_test = int(n_total * data_cfg.get("test_frac", 0.0))
+
+    test_files = files[:n_test]
+    val_files = files[n_test:n_test + n_val]
+    train_files = files[n_test + n_val:]
+
 
     train_ds = HCPDataset(
         train_files,
         target_spatial_size=data_cfg["target_spatial_size"],
         slice_axis=data_cfg["slice_axis"],
         num_adjacent_slices=data_cfg["num_adjacent_slices"],
-    )
+        cache_subjects=data_cfg.get("cache_subjects", True),
+        )
+
     val_ds = HCPDataset(
         val_files,
         target_spatial_size=data_cfg["target_spatial_size"],
         slice_axis=data_cfg["slice_axis"],
         num_adjacent_slices=data_cfg["num_adjacent_slices"],
+        cache_subjects=data_cfg.get("cache_subjects", True),
     )
 
-    train_loader = DataLoader(
-        train_ds,
-        batch_size=train_cfg["batch_size"],
-        shuffle=True,
-        num_workers=train_cfg["num_workers"],
-        pin_memory=(device_type == "cuda"),
-    )
-    val_loader = DataLoader(
-        val_ds,
-        batch_size=1,
-        shuffle=False,
-        num_workers=train_cfg["num_workers"],
-        pin_memory=(device_type == "cuda"),
+    test_ds = HCPDataset(
+        test_files,
+        target_spatial_size=data_cfg["target_spatial_size"],
+        slice_axis=data_cfg["slice_axis"],
+        num_adjacent_slices=data_cfg["num_adjacent_slices"],
+        cache_subjects=data_cfg.get("cache_subjects", True),
     )
 
-    return train_loader, val_loader, len(files), len(train_files), len(val_files)
+    num_workers = train_cfg["num_workers"]
+    loader_kwargs = {
+        "num_workers": num_workers,
+        "pin_memory": (device_type == "cuda"),
+        "persistent_workers": bool(num_workers > 0 and train_cfg.get("persistent_workers", True)),
+    }
+    if num_workers > 0:
+        loader_kwargs["prefetch_factor"] = train_cfg.get("prefetch_factor", 2)
+
+    train_loader = DataLoader(train_ds, batch_size=train_cfg["batch_size"], shuffle=True, **loader_kwargs)
+    val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, **loader_kwargs)
+    test_loader = DataLoader(test_ds, batch_size=1, shuffle=False, **loader_kwargs)
+
+    return (
+        train_loader,
+        val_loader,
+        test_loader,
+        len(files),
+        len(train_files),
+        len(val_files),
+        len(test_files),
+    )
