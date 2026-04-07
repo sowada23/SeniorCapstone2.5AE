@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from torch.amp import GradScaler, autocast
 
-from srcs.data.hcp_dataset import make_loaders
+from srcs.data.datamodule import build_train_val_test_loaders
 from srcs.models.autoencoder import AutoEncoder2D
 from srcs.utils.ens_dir import ensure_dir
 from srcs.utils.device import get_device
@@ -44,8 +44,8 @@ def train(cfg: dict):
     print(f"Scanning dataset root: {cfg['data']['root']}")
     print("Building train/val/test loaders...")
 
-    train_loader, val_loader, test_loader, n_all, n_train, n_val, n_test = make_loaders(cfg, device.type)
-
+    train_loader, val_loader, test_loader, n_all, n_train, n_val, n_test = build_train_val_test_loaders(cfg, device.type)
+ 
     print(f"Found paired subjects: {n_all} | train: {n_train} | val: {n_val} | test: {n_test}")
     print(f"Train slice samples: {len(train_loader.dataset)}")
     if val_loader is not None:

@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from torch.amp import autocast
 
-from srcs.data.hcp_dataset import make_loaders
+from srcs.data.datamodule import build_train_val_test_loaders
 from srcs.models.autoencoder import AutoEncoder2D
 from srcs.utils.device import get_device
 from srcs.utils.seed import set_seed
@@ -14,7 +14,8 @@ def test(cfg: dict, checkpoint_path: str):
     set_seed(cfg["train"]["seed"])
     use_amp = bool(cfg["train"]["amp"] and device.type == "cuda")
 
-    _, _, test_loader, _, _, _, n_test = make_loaders(cfg, device.type)
+    _, _, test_loader, _, _, _, n_test = build_train_val_test_loaders(cfg, device.type)
+    
     if test_loader is None or n_test == 0:
         raise RuntimeError("Test split is empty. Check test_frac and dataset size.")
 
