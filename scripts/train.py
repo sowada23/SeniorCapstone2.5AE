@@ -9,6 +9,9 @@ from srcs.utils.config import load_config
 
 
 def main():
+    import numpy as np
+    x = np.load("/cluster/home/sowada23/MedAI/UAD/DATA/HCP_numpy/100206/t1.npy")
+    print(x.shape)
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, default="configs/default.yaml")
     args = parser.parse_args()
