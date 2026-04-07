@@ -1,10 +1,10 @@
 import glob
 import os
-import random
 
 import numpy as np
-from torch.utils.data import Dataset, DataLoader
-from monai.transforms import Compose, NormalizeIntensityd, ResizeWithPadOrCropd
+from torch.utils.data import Dataset
+
+from srcs.data.transforms import build_hcp_transforms
 
 
 def build_file_list(root: str, t1_name: str, t2_name: str):
@@ -26,23 +26,23 @@ class HCPDataset(Dataset):
         slice_axis=0,
         num_adjacent_slices=3,
         cache_subjects=False,
+        target_depth=160,
     ):
         if num_adjacent_slices % 2 == 0:
             raise ValueError("num_adjacent_slices must be odd, e.g. 3 or 5")
         if slice_axis != 0:
-            raise NotImplementedError("This implementation currently supports slice_axis=0 only.")
+            raise NotImplementedError("Currently only slice_axis=0 is supported.")
 
         self.files = files
         self.slice_axis = slice_axis
         self.num_adjacent_slices = num_adjacent_slices
         self.radius = num_adjacent_slices // 2
         self.cache_subjects = cache_subjects
-        self.target_depth = 160
-
-        self.array_tf = Compose([
-            ResizeWithPadOrCropd(keys=["t1", "t2"], spatial_size=(self.target_depth, *target_spatial_size)),
-            NormalizeIntensityd(keys=["t1", "t2"], nonzero=True, channel_wise=True),
-        ])
+        self.target_depth = target_depth
+        self.array_tf = build_hcp_transforms(
+            target_spatial_size=target_spatial_size,
+            target_depth=target_depth,
+        )
 
         self.subjects = []
         self.samples = []
@@ -106,55 +106,3 @@ class HCPDataset(Dataset):
             "t1_path": paths["t1"],
             "t2_path": paths["t2"],
         }
-
-
-def make_loaders(cfg: dict, device_type: str):
-    data_cfg = cfg["data"]
-    train_cfg = cfg["train"]
-
-    files = build_file_list(
-        root=data_cfg["root"],
-        t1_name=data_cfg["t1_name"],
-        t2_name=data_cfg["t2_name"],
-    )
-    if not files:
-        raise RuntimeError(f"No paired T1/T2 files found under: {data_cfg['root']}")
-
-    random.shuffle(files)
-
-    n_all = len(files)
-    n_test = int(n_all * data_cfg["test_frac"])
-    n_val = int(n_all * data_cfg["val_frac"])
-
-    test_files = files[:n_test]
-    val_files = files[n_test:n_test + n_val]
-    train_files = files[n_test + n_val:]
-
-    if not train_files:
-        raise RuntimeError("Train split is empty. Reduce val_frac/test_frac or add more data.")
-
-    ds_kwargs = dict(
-        target_spatial_size=data_cfg["target_spatial_size"],
-        slice_axis=data_cfg["slice_axis"],
-        num_adjacent_slices=data_cfg["num_adjacent_slices"],
-        cache_subjects=data_cfg.get("cache_subjects", False),
-    )
-
-    train_ds = HCPDataset(train_files, **ds_kwargs)
-    val_ds = HCPDataset(val_files, **ds_kwargs) if val_files else None
-    test_ds = HCPDataset(test_files, **ds_kwargs) if test_files else None
-
-    persistent_workers = bool(train_cfg["persistent_workers"] and train_cfg["num_workers"] > 0)
-    loader_kwargs = dict(
-        num_workers=train_cfg["num_workers"],
-        pin_memory=(device_type == "cuda"),
-        persistent_workers=persistent_workers,
-    )
-    if train_cfg["num_workers"] > 0:
-        loader_kwargs["prefetch_factor"] = train_cfg["prefetch_factor"]
-
-    train_loader = DataLoader(train_ds, batch_size=train_cfg["batch_size"], shuffle=True, **loader_kwargs)
-    val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, **loader_kwargs) if val_ds is not None else None
-    test_loader = DataLoader(test_ds, batch_size=1, shuffle=False, **loader_kwargs) if test_ds is not None else None
-
-    return train_loader, val_loader, test_loader, n_all, len(train_files), len(val_files), len(test_files)

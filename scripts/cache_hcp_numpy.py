@@ -14,7 +14,7 @@ import numpy as np
 
 sys.path.append(os.path.abspath("."))
 
-from srcs.data.hcp_dataset import build_file_list
+from srcs.data.dataset import build_file_list
 
 
 def subject_id_from_path(path: str) -> str:
