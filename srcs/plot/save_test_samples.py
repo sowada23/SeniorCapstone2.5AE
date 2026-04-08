@@ -46,7 +46,9 @@ def save_test_examples_svg(examples, out_dir, filename="t1_test_examples.svg"):
     if n_rows == 1:
         axes = np.expand_dims(axes, axis=0)
 
-    y0, y1, x0, x1 = _compute_shared_crop_bounds(examples)
+    # y0, y1, x0, x1 = _compute_shared_crop_bounds(examples)
+    first = np.asarray(examples[0]["input_center_t1"])
+    y0, y1, x0, x1 = 0, first.shape[0], 0, first.shape[1]
 
     col_titles = ["Input Center T1", "True T1", "Predicted T1", "Absolute Error T1"]
     for col_idx, title in enumerate(col_titles):
