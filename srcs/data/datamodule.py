@@ -5,7 +5,6 @@ from torch.utils.data import DataLoader
 
 from srcs.data.dataset import HCPDataset, build_file_list
 
-
 def build_train_val_test_loaders(cfg, device_type: str):
     data_cfg = cfg["data"]
     train_cfg = cfg["train"]
