@@ -47,21 +47,21 @@ class HCPDataset(Dataset):
         self.samples = []
         self._build_cache_and_index()
 
-        def _load_subject(self, item):
-            t1 = np.load(item["t1"]).astype(np.float32)
-            t2 = np.load(item["t2"]).astype(np.float32)
+    def _load_subject(self, item):
+        t1 = np.load(item["t1"]).astype(np.float32)
+        t2 = np.load(item["t2"]).astype(np.float32)
 
-            t1 = np.expand_dims(t1, axis=0)
-            t2 = np.expand_dims(t2, axis=0)
+        t1 = np.expand_dims(t1, axis=0)
+        t2 = np.expand_dims(t2, axis=0)
 
-            data = self.array_tf({"t1": t1, "t2": t2})
-            t1 = np.asarray(data["t1"][0], dtype=np.float32)
-            t2 = np.asarray(data["t2"][0], dtype=np.float32)
+        data = self.array_tf({"t1": t1, "t2": t2})
+        t1 = np.asarray(data["t1"][0], dtype=np.float32)
+        t2 = np.asarray(data["t2"][0], dtype=np.float32)
 
-            # Rotate T1 90 degrees left (counterclockwise) for every slice
-            t1 = np.rot90(t1, k=1, axes=(1, 2)).copy()
+        t1 = np.rot90(t1, k=1, axes=(1, 2)).copy()
+        t2 = np.rot90(t2, k=1, axes=(1, 2)).copy()
 
-            return t1, t2
+        return t1, t2
 
 
     def _build_cache_and_index(self):

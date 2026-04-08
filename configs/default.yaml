@@ -7,7 +7,7 @@ data:
   target_spatial_size: [192, 160]
   slice_axis: 0
   num_adjacent_slices: 3
-  max_subjects: 12
+  max_subjects: 50
 
 train:
   seed: 42
