@@ -9,6 +9,29 @@ def _patient_label(t1_path: str) -> str:
     return path.parent.name or path.stem
 
 
+def _compute_shared_crop_bounds(examples, pad=8):
+    mask = None
+
+    for example in examples:
+        for key in ("input_center_t1", "true_t1", "pred_t1"):
+            image = np.asarray(example[key])
+            image_mask = np.isfinite(image) & (image > 0)
+            mask = image_mask if mask is None else (mask | image_mask)
+
+    if mask is None or not np.any(mask):
+        first = np.asarray(examples[0]["input_center_t1"])
+        return 0, first.shape[0], 0, first.shape[1]
+
+    rows = np.where(mask.any(axis=1))[0]
+    cols = np.where(mask.any(axis=0))[0]
+
+    y0 = max(int(rows[0]) - pad, 0)
+    y1 = min(int(rows[-1]) + pad + 1, mask.shape[0])
+    x0 = max(int(cols[0]) - pad, 0)
+    x1 = min(int(cols[-1]) + pad + 1, mask.shape[1])
+    return y0, y1, x0, x1
+
+
 def save_test_examples_svg(examples, out_dir, filename="t1_test_examples.svg"):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -21,6 +44,7 @@ def save_test_examples_svg(examples, out_dir, filename="t1_test_examples.svg"):
     fig, axes = plt.subplots(n_rows, 4, figsize=(14, 4.2 * n_rows))
     if n_rows == 1:
         axes = np.expand_dims(axes, axis=0)
+    y0, y1, x0, x1 = _compute_shared_crop_bounds(examples)
 
     col_titles = ["Input Center T1", "True T1", "Predicted T1", "Absolute Error T1"]
     for col_idx, title in enumerate(col_titles):
@@ -38,10 +62,11 @@ def save_test_examples_svg(examples, out_dir, filename="t1_test_examples.svg"):
 
         for col_idx, image in enumerate(images):
             ax = axes[row_idx, col_idx]
+            cropped = image[y0:y1, x0:x1]
             if col_idx == 3:
-                ax.imshow(image, cmap="hot")
+                ax.imshow(cropped, cmap="hot")
             else:
-                ax.imshow(image, cmap="gray")
+                ax.imshow(cropped, cmap="gray")
             ax.axis("off")
 
         axes[row_idx, 0].set_ylabel(f"{patient}\nz={z}", rotation=0, labelpad=48, va="center")
