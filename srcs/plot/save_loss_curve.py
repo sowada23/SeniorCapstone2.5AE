@@ -1,9 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[ ]:
-
-
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -32,4 +26,6 @@ def save_loss_curve(history, out_dir, filename="train_val_mse_curve.png"):
     plt.title("Train/Val MSE Loss Curve")
     plt.grid(True, alpha=0.3)
     plt.legend()
-
+    plt.tight_layout()
+    plt.savefig(fig_path, dpi=200, bbox_inches="tight")
+    plt.close()
