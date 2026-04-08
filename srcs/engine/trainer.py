@@ -16,7 +16,7 @@ from srcs.plot.save_mae_curve import save_mae_curve
 from srcs.utils.run_dir import make_run_dir
 
 
-def run_val(model, val_loader, criterion, device, use_amp):
+def run_val(model, val_loader, mse_criterion, mae_criterion, device, use_amp):
     if val_loader is None:
         return float("nan")
 
