@@ -92,9 +92,6 @@ def train(cfg: dict):
 
             train_losses.append(loss.item())
 
-            if batch_idx == 1:
-                print(f"Epoch {epoch:03d}: first batch OK | x={tuple(x.shape)} y={tuple(y.shape)}")
-
         train_loss = float(np.mean(train_losses)) if train_losses else float("inf")
         val_loss = run_val(model, val_loader, criterion, device, use_amp)
         history.append({

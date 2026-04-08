@@ -1,0 +1,6 @@
+/var/spool/slurmd/job04223/slurm_script: line 19: 1771433 Killed                  python scripts/train.py --config configs/default.yaml
+
+real	2m18.020s
+user	5m26.374s
+sys	2m6.690s
+slurmstepd-f3: error: Detected 1 oom-kill event(s) in StepId=4223.batch. Some of your processes may have been killed by the cgroup out-of-memory handler.

@@ -2,6 +2,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 
 def _patient_label(t1_path: str) -> str:
@@ -9,7 +10,7 @@ def _patient_label(t1_path: str) -> str:
     return path.parent.name or path.stem
 
 
-def _compute_shared_crop_bounds(examples, pad=30):
+def _compute_shared_crop_bounds(examples, pad=8):
     mask = None
 
     for example in examples:
@@ -41,16 +42,15 @@ def save_test_examples_svg(examples, out_dir, filename="t1_test_examples.svg"):
         raise ValueError("No examples were provided for SVG export.")
 
     n_rows = len(examples)
-    fig, axes = plt.subplots(n_rows, 4, figsize=(14, 4.2 * n_rows))
+    fig, axes = plt.subplots(n_rows, 4, figsize=(16, 4.2 * n_rows))
     if n_rows == 1:
         axes = np.expand_dims(axes, axis=0)
+
     y0, y1, x0, x1 = _compute_shared_crop_bounds(examples)
 
     col_titles = ["Input Center T1", "True T1", "Predicted T1", "Absolute Error T1"]
     for col_idx, title in enumerate(col_titles):
         axes[0, col_idx].set_title(title)
-
-    error_im = None
 
     for row_idx, example in enumerate(examples):
         images = [
@@ -67,17 +67,18 @@ def save_test_examples_svg(examples, out_dir, filename="t1_test_examples.svg"):
             cropped = image[y0:y1, x0:x1]
 
             if col_idx == 3:
-                error_im = ax.imshow(cropped, cmap="hot")
+                im = ax.imshow(cropped, cmap="hot")
+                divider = make_axes_locatable(ax)
+                cax = divider.append_axes("right", size="4%", pad=0.05)
+                cbar = fig.colorbar(im, cax=cax)
+                cbar.set_label("Absolute Error", rotation=90, labelpad=8)
+                cbar.ax.tick_params(labelsize=8)
             else:
                 ax.imshow(cropped, cmap="gray")
 
             ax.axis("off")
 
         axes[row_idx, 0].set_ylabel(f"{patient}\nz={z}", rotation=0, labelpad=48, va="center")
-
-    if error_im is not None:
-        cbar = fig.colorbar(error_im, ax=axes[:, 3], location="right", fraction=0.035, pad=0.02)
-        cbar.set_label("Absolute Error")
 
     plt.tight_layout()
     plt.savefig(out_path, format="svg", bbox_inches="tight")

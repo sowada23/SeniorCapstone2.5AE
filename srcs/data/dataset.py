@@ -24,14 +24,14 @@ class HCPDataset(Dataset):
         self,
         files,
         target_spatial_size,
-        slice_axis=0,
+        slice_axis=1,
         num_adjacent_slices=3,
         target_depth=160,
     ):
         if num_adjacent_slices % 2 == 0:
             raise ValueError("num_adjacent_slices must be odd, e.g. 3 or 5")
-        if slice_axis != 0:
-            raise NotImplementedError("Currently only slice_axis=0 is supported.")
+        if slice_axis != 1:
+            raise NotImplementedError("Currently only slice_axis=1 is supported.")
 
         self.files = files
         self.slice_axis = slice_axis
