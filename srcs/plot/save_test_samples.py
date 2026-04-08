@@ -9,7 +9,7 @@ def _patient_label(t1_path: str) -> str:
     return path.parent.name or path.stem
 
 
-def _compute_shared_crop_bounds(examples, pad=8):
+def _compute_shared_crop_bounds(examples, pad=30):
     mask = None
 
     for example in examples:
