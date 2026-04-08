@@ -50,6 +50,8 @@ def save_test_examples_svg(examples, out_dir, filename="t1_test_examples.svg"):
     for col_idx, title in enumerate(col_titles):
         axes[0, col_idx].set_title(title)
 
+    error_im = None
+
     for row_idx, example in enumerate(examples):
         images = [
             example["input_center_t1"],
@@ -63,13 +65,19 @@ def save_test_examples_svg(examples, out_dir, filename="t1_test_examples.svg"):
         for col_idx, image in enumerate(images):
             ax = axes[row_idx, col_idx]
             cropped = image[y0:y1, x0:x1]
+
             if col_idx == 3:
-                ax.imshow(cropped, cmap="hot")
+                error_im = ax.imshow(cropped, cmap="hot")
             else:
                 ax.imshow(cropped, cmap="gray")
+
             ax.axis("off")
 
         axes[row_idx, 0].set_ylabel(f"{patient}\nz={z}", rotation=0, labelpad=48, va="center")
+
+    if error_im is not None:
+        cbar = fig.colorbar(error_im, ax=axes[:, 3], location="right", fraction=0.035, pad=0.02)
+        cbar.set_label("Absolute Error")
 
     plt.tight_layout()
     plt.savefig(out_path, format="svg", bbox_inches="tight")
