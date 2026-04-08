@@ -30,8 +30,8 @@ class HCPDataset(Dataset):
     ):
         if num_adjacent_slices % 2 == 0:
             raise ValueError("num_adjacent_slices must be odd, e.g. 3 or 5")
-        if slice_axis != 1:
-            raise NotImplementedError("Currently only slice_axis=1 is supported.")
+        if slice_axis not in (0, 1, 2):
+            raise ValueError("slice_axis must be 0, 1, or 2")
 
         self.files = files
         self.slice_axis = slice_axis
@@ -58,18 +58,27 @@ class HCPDataset(Dataset):
         t1 = np.asarray(data["t1"][0], dtype=np.float32)
         t2 = np.asarray(data["t2"][0], dtype=np.float32)
 
-        t1 = np.rot90(t1, k=1, axes=(1, 2)).copy()
-        t2 = np.rot90(t2, k=1, axes=(1, 2)).copy()
+        # t1 = np.rot90(t1, k=1, axes=(1, 2)).copy()
+        # t2 = np.rot90(t2, k=1, axes=(1, 2)).copy()
 
         return t1, t2
 
+    def _depth_for_axis(self, vol):
+        return vol.shape[self.slice_axis]
+
+    def _extract_stack(self, vol, z):
+        moved = np.moveaxis(vol, self.slice_axis, 0)
+        return moved[z - self.radius:z + self.radius + 1]
+
+    def _extract_center_slice(self, vol, z):
+        return np.take(vol, z, axis=self.slice_axis)
 
     def _build_cache_and_index(self):
         for item in self.files:
             subject_idx = len(self.subjects)
             t1, t2 = self._load_subject(item)
 
-            depth = t1.shape[0]
+            depth = self._depth_for_axis(t1)
             self.subjects.append({"t1": t1, "t2": t2, "paths": item, "depth": depth})
 
             for z in range(self.radius, depth - self.radius):
@@ -77,9 +86,6 @@ class HCPDataset(Dataset):
 
     def __len__(self):
         return len(self.samples)
-
-    def _extract_stack(self, vol, z):
-        return vol[z - self.radius:z + self.radius + 1]
 
     def __getitem__(self, idx):
         sample = self.samples[idx]
@@ -94,7 +100,13 @@ class HCPDataset(Dataset):
         t2_stack = self._extract_stack(t2, z)
 
         x = np.concatenate([t1_stack, t2_stack], axis=0).astype(np.float32)
-        y = np.stack([t1[z], t2[z]], axis=0).astype(np.float32)
+        y = np.stack(
+            [
+                self._extract_center_slice(t1, z),
+                self._extract_center_slice(t2, z),
+            ],
+            axis=0,
+        ).astype(np.float32)
 
         return {
             "x": torch.from_numpy(x),
