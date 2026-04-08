@@ -14,8 +14,6 @@ from srcs.utils.seed import set_seed
 from srcs.plot.save_loss_curve import save_loss_curve
 from srcs.utils.run_dir import make_run_dir
 
-run_info = make_run_dir("./Output")
-print(run_info["run_dir"])
 
 def run_val(model, val_loader, criterion, device, use_amp):
     if val_loader is None:
@@ -39,17 +37,20 @@ def train(cfg: dict):
     device = get_device()
     use_amp = bool(cfg["train"]["amp"] and device.type == "cuda")
 
+    run_info = make_run_dir(cfg["train"]["output_dir"])
+    ensure_dir(cfg["train"]["output_dir"])
+    ensure_dir(run_info["weight_dir"])
+
     if device.type == "cuda":
         torch.backends.cudnn.benchmark = bool(cfg["train"].get("cudnn_benchmark", True))
 
-    ensure_dir(cfg["train"]["output_dir"])
-
+    print(f"Run directory: {run_info['run_dir']}")
     print(f"Using device: {device}")
     print(f"Scanning dataset root: {cfg['data']['root']}")
     print("Building train/val/test loaders...")
 
     train_loader, val_loader, test_loader, n_all, n_train, n_val, n_test = build_train_val_test_loaders(cfg, device.type)
- 
+
     print(f"Found paired subjects: {n_all} | train: {n_train} | val: {n_val} | test: {n_test}")
     print(f"Train slice samples: {len(train_loader.dataset)}")
     if val_loader is not None:
@@ -67,7 +68,7 @@ def train(cfg: dict):
     scaler = GradScaler(device.type, enabled=use_amp)
 
     best_val = float("inf")
-    best_path = os.path.join(cfg["train"]["output_dir"], "best_ae25d_t1t2.pt")
+    best_path = os.path.join(run_info["weight_dir"], "best_ae25d_t1t2.pt")
 
     history = []
 
