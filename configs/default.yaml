@@ -4,21 +4,21 @@ data:
   t2_name: "t2.npy"
   val_frac: 0.1
   test_frac: 0.1
-  target_spatial_size: [192, 160]
-  slice_axis: 0
+  target_spatial_size: [256, 256]
+  slice_axis: 1
   num_adjacent_slices: 3
   max_subjects: 50
 
 train:
   seed: 42
   output_dir: "./Output"
-  batch_size: 64
-  num_workers: 8
+  batch_size: 128
+  num_workers: 16
   persistent_workers: true
   prefetch_factor: 2
   learning_rate: 1.0e-4
   weight_decay: 1.0e-4
-  epochs: 5
+  epochs: 3
   amp: true
   cudnn_benchmark: true
 
