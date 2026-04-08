@@ -11,7 +11,8 @@ from srcs.models.autoencoder import AutoEncoder2D
 from srcs.utils.ens_dir import ensure_dir
 from srcs.utils.device import get_device
 from srcs.utils.seed import set_seed
-from srcs.plot.save_loss_curve import save_loss_curve
+from srcs.plot.save_mse_curve import save_mse_curve
+from srcs.plot.save_mae_curve import save_mae_curve
 from srcs.utils.run_dir import make_run_dir
 
 
@@ -20,17 +21,23 @@ def run_val(model, val_loader, criterion, device, use_amp):
         return float("nan")
 
     model.eval()
-    losses = []
+    mse_losses = []
+    mae_losses = []
+
     with torch.no_grad():
         for batch in val_loader:
             x = batch["x"].to(device, non_blocking=True)
             y = batch["y"].to(device, non_blocking=True)
             with autocast(device_type=device.type, enabled=use_amp):
                 y_hat = model(x)
-                loss = criterion(y_hat, y)
-            losses.append(loss.item())
-    return float(np.mean(losses)) if losses else float("inf")
+                mse_loss = criterion(y_hat, y)
+                mae_loss = criterion(y_hat, y)
+            mse_losses.append(mse_loss.item())
+            mae_losses.append(mae_loss.item())
 
+    val_mse = float(np.mean(mse_losses)) if mse_losses else float("inf")
+    val_mae = float(np.mean(mae_losses)) if mae_losses else float("inf")
+    return val_mse, val_mae
 
 def train(cfg: dict):
     set_seed(cfg["train"]["seed"])
@@ -64,7 +71,8 @@ def train(cfg: dict):
         lr=cfg["train"]["learning_rate"],
         weight_decay=cfg["train"]["weight_decay"],
     )
-    criterion = nn.MSELoss()
+    mse_criterion = nn.MSELoss()
+    mae_criterion = nn.L1Loss()
     scaler = GradScaler(device.type, enabled=use_amp)
 
     best_val = float("inf")
@@ -75,7 +83,9 @@ def train(cfg: dict):
     for epoch in range(1, cfg["train"]["epochs"] + 1):
         t0 = time.time()
         model.train()
-        train_losses = []
+        
+        train_mse_losses = []
+        train_mae_losses = []
 
         for batch_idx, batch in enumerate(train_loader, start=1):
             x = batch["x"].to(device, non_blocking=True)
@@ -84,31 +94,41 @@ def train(cfg: dict):
             optimizer.zero_grad(set_to_none=True)
             with autocast(device_type=device.type, enabled=use_amp):
                 y_hat = model(x)
-                loss = criterion(y_hat, y)
 
-            scaler.scale(loss).backward()
+                mse_loss = mse_criterion(y_hat, y)
+                mae_loss = mae_criterion(y_hat, y)
+
+            scaler.scale(mse_loss).backward()
             scaler.step(optimizer)
             scaler.update()
 
-            train_losses.append(loss.item())
+            train_mse_losses.append(mse_loss.item())
+            train_mae_losses.append(mae_loss.item())
 
-        train_loss = float(np.mean(train_losses)) if train_losses else float("inf")
-        val_loss = run_val(model, val_loader, criterion, device, use_amp)
-        history.append({
-            "epoch": epoch,
-            "train_loss": train_loss,
-            "val_loss": val_loss,
-        })
+        train_mse = float(np.mean(train_mse_losses)) if train_mse_losses else float("inf")
+        train_mae = float(np.mean(train_mae_losses)) if train_mae_losses else float("inf")
+        val_mse, val_mae = run_val(model, val_loader, mse_criterion, mae_criterion, device, use_amp)
+
+        history.append(
+            {
+                "epoch": epoch,
+                "train_loss": train_mse,
+                "val_loss": val_mse,
+                "train_mae": train_mae,
+                "val_mae": val_mae,
+            }
+        )
 
         dt = time.time() - t0
 
         print(
             f"Epoch {epoch:03d}/{cfg['train']['epochs']} | "
-            f"train MSE: {train_loss:.6f} | val MSE: {val_loss:.6f} | {dt:.1f}s"
+            f"train MSE: {train_mse:.6f} | val MSE: {val_mse:.6f} | "
+            f"train MAE: {train_mae:.6f} | val MAE: {val_mae:.6f} | {dt:.1f}s"
         )
 
-        if val_loader is not None and val_loss < best_val:
-            best_val = val_loss
+        if val_loader is not None and val_mse < best_val:
+            best_val = val_mse
             torch.save(
                 {
                     "epoch": epoch,
@@ -120,7 +140,8 @@ def train(cfg: dict):
                 },
                 best_path,
             )
-            print(f"saved best: {best_path} (val {best_val:.6f})")
+            print(f"saved best: {best_path} (val MSE {best_val:.6f})")
 
-    save_loss_curve(history, run_info["train_dir"], filename="mse_loss_curve.png")
+    save_mse_curve(history, run_info["train_dir"], filename="mse_loss_curve.png")
+    save_mae_curve(history, run_info["train_dir"], filename="mae_loss_curve.svg")
     print("Training done.")
