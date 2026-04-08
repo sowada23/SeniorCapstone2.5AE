@@ -11,7 +11,11 @@ from srcs.models.autoencoder import AutoEncoder2D
 from srcs.utils.ens_dir import ensure_dir
 from srcs.utils.device import get_device
 from srcs.utils.seed import set_seed
+from srcs.plot.save_loss_curve import save_loss_curve
+from srcs.utils.run_dir import make_run_dir
 
+run_info = make_run_dir("./Output")
+print(run_info["run_dir"])
 
 def run_val(model, val_loader, criterion, device, use_amp):
     if val_loader is None:
@@ -65,6 +69,8 @@ def train(cfg: dict):
     best_val = float("inf")
     best_path = os.path.join(cfg["train"]["output_dir"], "best_ae25d_t1t2.pt")
 
+    history = []
+
     for epoch in range(1, cfg["train"]["epochs"] + 1):
         t0 = time.time()
         model.train()
@@ -90,6 +96,12 @@ def train(cfg: dict):
 
         train_loss = float(np.mean(train_losses)) if train_losses else float("inf")
         val_loss = run_val(model, val_loader, criterion, device, use_amp)
+        history.append({
+            "epoch": epoch,
+            "train_loss": train_loss,
+            "val_loss": val_loss,
+        })
+
         dt = time.time() - t0
 
         print(
@@ -112,4 +124,5 @@ def train(cfg: dict):
             )
             print(f"saved best: {best_path} (val {best_val:.6f})")
 
+    save_loss_curve(history, run_info["train_dir"], filename="mse_loss_curve.png")
     print("Training done.")

@@ -7,13 +7,13 @@ data:
   target_spatial_size: [192, 160]
   slice_axis: 0
   num_adjacent_slices: 3
-  cache_subjects: false
+  max_subjects: 12
 
 train:
   seed: 42
   output_dir: "./Output"
-  batch_size: 8
-  num_workers: 0
+  batch_size: 64
+  num_workers: 8
   persistent_workers: true
   prefetch_factor: 2
   learning_rate: 1.0e-4

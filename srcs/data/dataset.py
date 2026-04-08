@@ -2,6 +2,7 @@ import glob
 import os
 
 import numpy as np
+import torch
 from torch.utils.data import Dataset
 
 from srcs.data.transforms import build_hcp_transforms
@@ -25,7 +26,6 @@ class HCPDataset(Dataset):
         target_spatial_size,
         slice_axis=0,
         num_adjacent_slices=3,
-        cache_subjects=False,
         target_depth=160,
     ):
         if num_adjacent_slices % 2 == 0:
@@ -37,7 +37,6 @@ class HCPDataset(Dataset):
         self.slice_axis = slice_axis
         self.num_adjacent_slices = num_adjacent_slices
         self.radius = num_adjacent_slices // 2
-        self.cache_subjects = cache_subjects
         self.target_depth = target_depth
         self.array_tf = build_hcp_transforms(
             target_spatial_size=target_spatial_size,
@@ -46,7 +45,7 @@ class HCPDataset(Dataset):
 
         self.subjects = []
         self.samples = []
-        self._build_index()
+        self._build_cache_and_index()
 
     def _load_subject(self, item):
         t1 = np.load(item["t1"]).astype(np.float32)
@@ -60,30 +59,19 @@ class HCPDataset(Dataset):
         t2 = np.asarray(data["t2"][0], dtype=np.float32)
         return t1, t2
 
-    def _build_index(self):
+    def _build_cache_and_index(self):
         for item in self.files:
             subject_idx = len(self.subjects)
+            t1, t2 = self._load_subject(item)
 
-            if self.cache_subjects:
-                t1, t2 = self._load_subject(item)
-                self.subjects.append({"t1": t1, "t2": t2, "paths": item})
-            else:
-                self.subjects.append({"paths": item})
+            depth = t1.shape[0]
+            self.subjects.append({"t1": t1, "t2": t2, "paths": item, "depth": depth})
 
-            for z in range(self.radius, self.target_depth - self.radius):
+            for z in range(self.radius, depth - self.radius):
                 self.samples.append({"subject_idx": subject_idx, "z": z})
 
     def __len__(self):
         return len(self.samples)
-
-    def _get_subject_arrays(self, subject_idx):
-        subject = self.subjects[subject_idx]
-        if self.cache_subjects:
-            return subject["t1"], subject["t2"], subject["paths"]
-
-        paths = subject["paths"]
-        t1, t2 = self._load_subject(paths)
-        return t1, t2, paths
 
     def _extract_stack(self, vol, z):
         return vol[z - self.radius:z + self.radius + 1]
@@ -91,7 +79,11 @@ class HCPDataset(Dataset):
     def __getitem__(self, idx):
         sample = self.samples[idx]
         z = sample["z"]
-        t1, t2, paths = self._get_subject_arrays(sample["subject_idx"])
+
+        subject = self.subjects[sample["subject_idx"]]
+        t1 = subject["t1"]
+        t2 = subject["t2"]
+        paths = subject["paths"]
 
         t1_stack = self._extract_stack(t1, z)
         t2_stack = self._extract_stack(t2, z)
@@ -100,8 +92,8 @@ class HCPDataset(Dataset):
         y = np.stack([t1[z], t2[z]], axis=0).astype(np.float32)
 
         return {
-            "x": x,
-            "y": y,
+            "x": torch.from_numpy(x),
+            "y": torch.from_numpy(y),
             "z": z,
             "t1_path": paths["t1"],
             "t2_path": paths["t2"],
