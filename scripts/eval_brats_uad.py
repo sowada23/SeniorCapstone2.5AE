@@ -17,6 +17,39 @@ from srcs.plot.save_brats_overlays import save_brats_overlay
 from srcs.utils.device import get_device
 from srcs.utils.seed import set_seed
 
+DEFAULT_BRATS_ROOT = "/cluster/home/sowada23/MedAI/UAD/DATA/BraTS/BraTS2021/test"
+DEFAULT_T1_NAME = "t1.nii.gz"
+DEFAULT_T2_NAME = "t2.nii.gz"
+DEFAULT_SEG_NAME = "seg.nii.gz"
+DEFAULT_USE_AMP = True
+DEFAULT_SAVE_OVERLAYS = True
+
+
+from pathlib import Path
+import re
+
+def find_latest_run_dir(output_root="./Output"):
+    output_root = Path(output_root)
+    if not output_root.exists():
+        return str(output_root / "brats_uad_eval")
+
+    run_dirs = []
+    pattern = re.compile(r"^Output_(\d+)$")
+
+    for path in output_root.iterdir():
+        if path.is_dir():
+            match = pattern.match(path.name)
+            if match:
+                run_idx = int(match.group(1))
+                run_dirs.append((run_idx, path))
+
+    if not run_dirs:
+        return str(output_root / "brats_uad_eval")
+
+    latest_dir = max(run_dirs, key=lambda x: x[0])[1]
+    return str(latest_dir / "brats_uad_eval")
+
+DEFAULT_OUTPUT_DIR = find_latest_run_dir("./Output")
 
 def dice_score(pred_mask, true_mask, eps=1e-8):
     pred_mask = pred_mask.astype(np.float32)
@@ -69,23 +102,31 @@ def save_metrics(out_dir, metrics):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--brats-root", type=str, required=True)
+    parser.add_argument("--brats-root", type=str, default=DEFAULT_BRATS_ROOT)
     parser.add_argument("--ckpt", type=str, required=True)
-    parser.add_argument("--t1-name", type=str, default="t1.nii.gz")
-    parser.add_argument("--t2-name", type=str, default="t2.nii.gz")
-    parser.add_argument("--seg-name", type=str, default="seg.nii.gz")
+    parser.add_argument("--t1-name", type=str, default=DEFAULT_T1_NAME)
+    parser.add_argument("--t2-name", type=str, default=DEFAULT_T2_NAME)
+    parser.add_argument("--seg-name", type=str, default=DEFAULT_SEG_NAME)
     parser.add_argument("--target-size", type=int, nargs=2, default=[256, 256])
     parser.add_argument("--target-depth", type=int, default=160)
     parser.add_argument("--slice-axis", type=int, default=1)
     parser.add_argument("--num-adjacent-slices", type=int, default=3)
-    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--num-workers", type=int, default=4)
-    parser.add_argument("--amp", action="store_true")
     parser.add_argument("--anomaly-mode", type=str, default="abs", choices=["abs", "sq"])
-    parser.add_argument("--save-overlays", action="store_true")
     parser.add_argument("--max-overlays", type=int, default=20)
-    parser.add_argument("--output-dir", type=str, default="./Output/brats_uad_eval")
+    parser.add_argument("--output-dir", type=str, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--seed", type=int, default=42)
+
+    # Optional override flags
+    parser.add_argument("--amp", dest="amp", action="store_true")
+    parser.add_argument("--no-amp", dest="amp", action="store_false")
+    parser.set_defaults(amp=DEFAULT_USE_AMP)
+
+    parser.add_argument("--save-overlays", dest="save_overlays", action="store_true")
+    parser.add_argument("--no-save-overlays", dest="save_overlays", action="store_false")
+    parser.set_defaults(save_overlays=DEFAULT_SAVE_OVERLAYS)
+
     args = parser.parse_args()
 
     set_seed(args.seed)
