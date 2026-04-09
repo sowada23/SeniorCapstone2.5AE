@@ -11,6 +11,7 @@ from srcs.plot.save_test_samples import save_test_examples_svg
 from srcs.utils.device import get_device
 from srcs.utils.ens_dir import ensure_dir
 from srcs.utils.seed import set_seed
+from srcs.utils.save_test_metrics import save_test_metrics
 
 
 def _resolve_test_output_dir(checkpoint_path: str) -> str:
@@ -90,8 +91,11 @@ def test(cfg: dict, checkpoint_path: str):
     model.load_state_dict(ckpt["model_state"])
     model.eval()
 
-    criterion = nn.MSELoss()
-    losses = []
+    mse_criterion = nn.MSELoss()
+    mae_criterion = nn.L1Loss()
+
+    mse_losses = []
+    mae_losses = []
 
     with torch.no_grad():
         for batch in test_loader:
@@ -100,11 +104,17 @@ def test(cfg: dict, checkpoint_path: str):
 
             with autocast(device_type=device.type, enabled=use_amp):
                 y_hat = model(x)
-                loss = criterion(y_hat, y)
+                mse_loss = mse_criterion(y_hat, y)
+                mae_loss = mae_criterion(y_hat, y)
 
-            losses.append(loss.item())
+            mse_losses.append(mse_loss.item())
+            mae_losses.append(mae_loss.item())
 
-    test_loss = float(np.mean(losses)) if losses else float("inf")
+    mse_loss = float(np.mean(mse_losses)) if mse_losses else float("inf")
+    mae_loss = float(np.mean(mae_losses)) if mae_losses else float("inf")
+
+    test_out_dir = _resolve_test_output_dir(checkpoint_path)
+
     sample_indices = _select_subject_samples(test_loader.dataset, limit=3)
     if sample_indices:
         examples = _collect_examples(model, test_loader.dataset, sample_indices, device, use_amp)
@@ -114,5 +124,10 @@ def test(cfg: dict, checkpoint_path: str):
             filename="t1_test_examples.svg",
         )
         print(f"Saved test SVG: {out_path}")
-    print(f"Test MSE: {test_loss:.6f}")
-    return test_loss
+
+    print(f"Test MSE: {mse_loss:.6f}")
+    print(f"Test MAE: {mae_loss:.6f}")
+    save_test_metrics(mse_loss, mae_loss, test_out_dir, filename="test_metrics.txt")
+
+
+    return mse_loss, mae_loss
