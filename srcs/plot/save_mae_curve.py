@@ -22,10 +22,11 @@ def save_mae_curve(history, out_dir, filename="mae_loss_curve.svg"):
     plt.plot(epochs, train_mae, marker="o", label="Train MAE")
     plt.plot(epochs, val_mae, marker="o", label="Val MAE")
     plt.xlabel("Epoch")
-    plt.ylabel("MAE")
+    plt.ylabel("MAE Loss")
     plt.title("Train/Val MAE Curve")
     plt.grid(True, alpha=0.3)
     plt.legend()
     plt.tight_layout()
     plt.savefig(fig_path, format="svg", bbox_inches="tight")
     plt.close()
+

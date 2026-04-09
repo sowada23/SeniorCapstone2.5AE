@@ -48,7 +48,7 @@ def save_brats_overlay(
 
     fig.suptitle(f"{subject_id} | z={int(z)}")
     plt.tight_layout()
-    plt.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.savefig(out_path, format="svg", bbox_inches="tight")
     plt.close(fig)
 
     return str(out_path)

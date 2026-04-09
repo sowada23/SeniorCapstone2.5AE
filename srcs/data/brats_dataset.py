@@ -9,17 +9,29 @@ from monai.transforms import Compose, NormalizeIntensityd, Resized
 from torch.utils.data import Dataset
 
 
-def build_brats_file_list(root: str, t1_name: str, t2_name: str, seg_name: str):
-    t1_paths = sorted(glob.glob(os.path.join(root, "**", t1_name), recursive=True))
+from pathlib import Path
+
+
+def build_brats_file_list(root: str):
+    root = Path(root)
     items = []
 
-    for t1 in t1_paths:
-        folder = os.path.dirname(t1)
-        t2 = os.path.join(folder, t2_name)
-        seg = os.path.join(folder, seg_name)
+    for case_dir in sorted(root.iterdir()):
+        if not case_dir.is_dir():
+            continue
 
-        if os.path.exists(t2) and os.path.exists(seg):
-            items.append({"t1": t1, "t2": t2, "seg": seg})
+        t1_files = sorted(case_dir.glob("*_t1.nii")) + sorted(case_dir.glob("*_t1.nii.gz"))
+        t2_files = sorted(case_dir.glob("*_t2.nii")) + sorted(case_dir.glob("*_t2.nii.gz"))
+        seg_files = sorted(case_dir.glob("*_seg.nii")) + sorted(case_dir.glob("*_seg.nii.gz"))
+
+        if t1_files and t2_files and seg_files:
+            items.append(
+                {
+                    "t1": str(t1_files[0]),
+                    "t2": str(t2_files[0]),
+                    "seg": str(seg_files[0]),
+                }
+            )
 
     return items
 

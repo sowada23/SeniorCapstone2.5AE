@@ -3,7 +3,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 
-def save_mse_curve(history, out_dir, filename="train_val_mse_curve.png"):
+def save_mse_curve(history, out_dir, filename="train_val_mse_curve.svg"):
     """
     history: list of dicts like
         [{"epoch": 1, "train_loss": 0.12, "val_loss": 0.15}, ...]
@@ -27,5 +27,5 @@ def save_mse_curve(history, out_dir, filename="train_val_mse_curve.png"):
     plt.grid(True, alpha=0.3)
     plt.legend()
     plt.tight_layout()
-    plt.savefig(fig_path, dpi=200, bbox_inches="tight")
+    plt.savefig(fig_path, format="svg", bbox_inches="tight")
     plt.close()

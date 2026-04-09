@@ -5,9 +5,10 @@ data:
   val_frac: 0.1
   test_frac: 0.1
   target_spatial_size: [256, 256]
+  target_depth: 192
   slice_axis: 1
   num_adjacent_slices: 3
-  max_subjects: 50
+  max_subjects: 100
 
 train:
   seed: 42
@@ -18,7 +19,7 @@ train:
   prefetch_factor: 2
   learning_rate: 1.0e-4
   weight_decay: 1.0e-4
-  epochs: 3
+  epochs: 50
   amp: true
   cudnn_benchmark: true
 
@@ -26,3 +27,13 @@ model:
   in_channels: 6
   base: 32
   out_channels: 2
+
+brats:
+  root: "../../DATA/BraTS/BraTS2021/test"
+  seed: 42
+  batch_size: 64
+  num_workers: 8
+  max_subjects: 10
+  target_depth: 192
+  max_overlays: 20
+  anomaly_mode: "abs"
