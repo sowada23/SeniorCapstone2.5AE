@@ -14,7 +14,7 @@ train:
   seed: 42
   output_dir: "./Output"
   batch_size: 128
-  num_workers: 16
+  num_workers: 8
   persistent_workers: true
   prefetch_factor: 2
   learning_rate: 1.0e-4
