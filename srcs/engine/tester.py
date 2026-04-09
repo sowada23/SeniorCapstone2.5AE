@@ -43,7 +43,7 @@ def _select_subject_samples(test_dataset, limit=3):
 
 
 def _collect_examples(model, test_dataset, sample_indices, device, use_amp):
-    examples = []
+    examples = {"t1": [], "t2": []}
     radius = test_dataset.radius
 
     with torch.no_grad():
@@ -60,16 +60,28 @@ def _collect_examples(model, test_dataset, sample_indices, device, use_amp):
             y_hat_np = y_hat[0].detach().cpu().numpy()
 
             true_t1 = y_np[0]
+            true_t2 = y_np[1]
             pred_t1 = y_hat_np[0]
+            pred_t2 = y_hat_np[1]
 
-            examples.append(
+            examples["t1"].append(
                 {
-                    "input_center_t1": x_np[radius],
-                    "true_t1": true_t1,
-                    "pred_t1": pred_t1,
-                    "abs_error_t1": np.abs(pred_t1 - true_t1),
+                    "input_center": x_np[radius],
+                    "true": true_t1,
+                    "pred": pred_t1,
+                    "abs_error": np.abs(pred_t1 - true_t1),
                     "z": int(sample["z"]),
-                    "t1_path": sample["t1_path"],
+                    "path": sample["t1_path"],
+                }
+            )
+            examples["t2"].append(
+                {
+                    "input_center": x_np[radius + test_dataset.num_adjacent_slices],
+                    "true": true_t2,
+                    "pred": pred_t2,
+                    "abs_error": np.abs(pred_t2 - true_t2),
+                    "z": int(sample["z"]),
+                    "path": sample["t2_path"],
                 }
             )
 
@@ -117,11 +129,19 @@ def test(cfg: dict, checkpoint_path: str):
 
     sample_indices = _select_subject_samples(test_loader.dataset, limit=3)
     if sample_indices:
-        examples = _collect_examples(model, test_loader.dataset, sample_indices, device, use_amp)
+        examples_by_modality = _collect_examples(model, test_loader.dataset, sample_indices, device, use_amp)
         out_path = save_test_examples_svg(
-            examples,
+            examples_by_modality["t1"],
             _resolve_test_output_dir(checkpoint_path),
             filename="t1_test_examples.svg",
+            modality_label="T1",
+        )
+        print(f"Saved test SVG: {out_path}")
+        out_path = save_test_examples_svg(
+            examples_by_modality["t2"],
+            _resolve_test_output_dir(checkpoint_path),
+            filename="t2_test_examples.svg",
+            modality_label="T2",
         )
         print(f"Saved test SVG: {out_path}")
 

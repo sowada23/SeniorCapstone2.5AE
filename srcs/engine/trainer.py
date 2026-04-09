@@ -30,8 +30,8 @@ def run_val(model, val_loader, mse_criterion, mae_criterion, device, use_amp):
             y = batch["y"].to(device, non_blocking=True)
             with autocast(device_type=device.type, enabled=use_amp):
                 y_hat = model(x)
-                mse_loss = criterion(y_hat, y)
-                mae_loss = criterion(y_hat, y)
+                mse_loss = mse_criterion(y_hat, y)
+                mae_loss = mae_criterion(y_hat, y)
             mse_losses.append(mse_loss.item())
             mae_losses.append(mae_loss.item())
 
