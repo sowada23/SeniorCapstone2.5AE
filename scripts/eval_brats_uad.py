@@ -2,6 +2,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
+import re
 
 import numpy as np
 import torch
@@ -13,7 +14,7 @@ sys.path.append(os.path.abspath("."))
 
 from srcs.data.brats_dataset import BraTSDataset, build_brats_file_list
 from srcs.models.autoencoder import AutoEncoder2D
-from srcs.plot.save_brats_overlays import save_brats_overlay
+from srcs.plot.save_brats_overlays import save_brats_focus_svg
 from srcs.utils.device import get_device
 from srcs.utils.seed import set_seed
 from srcs.utils.config import load_config
@@ -24,12 +25,6 @@ DEFAULT_T2_NAME = "t2.nii.gz"
 DEFAULT_SEG_NAME = "seg.nii.gz"
 DEFAULT_USE_AMP = True
 DEFAULT_SAVE_OVERLAYS = True
-
-
-from pathlib import Path
-import re
-
-from pathlib import Path
 
 
 def infer_output_dir_from_ckpt(ckpt_path: str):
@@ -58,7 +53,9 @@ def find_latest_run_dir(output_root="./Output"):
     latest_dir = max(run_dirs, key=lambda x: x[0])[1]
     return str(latest_dir / "brats_uad_eval")
 
+
 DEFAULT_OUTPUT_DIR = find_latest_run_dir("./Output")
+
 
 def dice_score(pred_mask, true_mask, eps=1e-8):
     pred_mask = pred_mask.astype(np.float32)
@@ -77,9 +74,16 @@ def reduce_anomaly_map(y_hat, y, mode="abs"):
     else:
         raise ValueError("mode must be 'abs' or 'sq'")
 
-    # Average across reconstructed channels -> [B, 1, H, W]
     anomaly_map = residual.mean(dim=1, keepdim=True)
     return anomaly_map
+
+
+def compute_modality_anomaly_map(pred_slice, true_slice, mode="abs"):
+    if mode == "abs":
+        return np.abs(pred_slice - true_slice)
+    if mode == "sq":
+        return (pred_slice - true_slice) ** 2
+    raise ValueError("mode must be 'abs' or 'sq'")
 
 
 def find_best_dice_threshold(scores, labels, num_thresholds=200):
@@ -109,6 +113,77 @@ def save_metrics(out_dir, metrics):
     return str(out_path)
 
 
+def _select_subject_samples(dataset, limit=3):
+    selected = []
+
+    for subject_idx, subject in enumerate(dataset.subjects[:limit]):
+        min_z = dataset.radius
+        max_z = subject["depth"] - dataset.radius - 1
+        z = subject["depth"] // 2
+        z = max(min_z, min(z, max_z))
+
+        sample_idx = None
+        for idx, sample in enumerate(dataset.samples):
+            if sample["subject_idx"] == subject_idx and sample["z"] == z:
+                sample_idx = idx
+                break
+
+        if sample_idx is not None:
+            selected.append(sample_idx)
+
+    return selected
+
+
+def _collect_center_slice_examples(model, dataset, sample_indices, device, use_amp, anomaly_mode):
+    examples = {"t1": [], "t2": []}
+
+    with torch.no_grad():
+        for sample_idx in sample_indices:
+            sample = dataset[sample_idx]
+            x = sample["x"].unsqueeze(0).to(device, non_blocking=True)
+            y = sample["y"].unsqueeze(0).to(device, non_blocking=True)
+
+            with autocast(device_type=device.type, enabled=use_amp):
+                y_hat = model(x)
+
+            y_np = y[0].detach().cpu().numpy()
+            y_hat_np = y_hat[0].detach().cpu().numpy()
+            seg_np = sample["seg"][0].detach().cpu().numpy()
+            z = int(sample["z"])
+            subject_id = sample["subject_id"]
+
+            true_t1 = y_np[0]
+            true_t2 = y_np[1]
+            pred_t1 = y_hat_np[0]
+            pred_t2 = y_hat_np[1]
+
+            examples["t1"].append(
+                {
+                    "original": true_t1,
+                    "recon": pred_t1,
+                    "anomaly": compute_modality_anomaly_map(pred_t1, true_t1, mode=anomaly_mode),
+                    "seg": seg_np,
+                    "z": z,
+                    "subject_id": subject_id,
+                    "path": sample["t1_path"],
+                }
+            )
+
+            examples["t2"].append(
+                {
+                    "original": true_t2,
+                    "recon": pred_t2,
+                    "anomaly": compute_modality_anomaly_map(pred_t2, true_t2, mode=anomaly_mode),
+                    "seg": seg_np,
+                    "z": z,
+                    "subject_id": subject_id,
+                    "path": sample["t2_path"],
+                }
+            )
+
+    return examples
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, default="configs/default.yaml")
@@ -119,32 +194,27 @@ def main():
 
     brats_cfg = cfg["brats"]
     data_cfg = cfg["data"]
-    
+
     brats_root = brats_cfg["root"]
     max_subjects = brats_cfg.get("max_subjects")
     target_size = data_cfg["target_spatial_size"]
     slice_axis = data_cfg["slice_axis"]
     num_adjacent_slices = data_cfg["num_adjacent_slices"]
     target_depth = brats_cfg.get("target_depth", 160)
-    max_overlays = brats_cfg.get("max_overlays", 20)
 
     set_seed(brats_cfg["seed"])
     device = get_device()
     use_amp = True
+
     files = build_brats_file_list(brats_root)
     if not files:
         raise RuntimeError(f"No BraTS cases found under: {brats_root}")
-    
+
     files = sorted(files, key=lambda x: x["t1"])
-    
     if max_subjects is not None:
         files = files[:max_subjects]
-    
+
     print(f"BraTS cases selected: {len(files)}")
-
-
-    if not files:
-        raise RuntimeError(f"No BraTS cases found under: {args.brats_root}")
 
     dataset = BraTSDataset(
         files=files,
@@ -153,7 +223,6 @@ def main():
         num_adjacent_slices=num_adjacent_slices,
         target_depth=target_depth,
     )
-
 
     loader = DataLoader(
         dataset,
@@ -171,45 +240,26 @@ def main():
 
     all_scores = []
     all_labels = []
-    tumor_examples = []
-    overlay_count = 0
+    anomaly_mode = cfg["brats"].get("anomaly_mode", "abs")
 
     with torch.no_grad():
         for batch_idx, batch in enumerate(loader, start=1):
-            print(
-                f"Processing batch {batch_idx}/{len(loader)}"
-            )
-            
+            print(f"Processing batch {batch_idx}/{len(loader)}")
+
             x = batch["x"].to(device, non_blocking=True)
             y = batch["y"].to(device, non_blocking=True)
             seg = batch["seg"].to(device, non_blocking=True)
 
             with autocast(device_type=device.type, enabled=use_amp):
                 y_hat = model(x)
-                anomaly_mode = cfg["brats"].get("anomaly_mode", "abs")
                 anomaly_map = reduce_anomaly_map(y_hat, y, mode=anomaly_mode)
 
             scores = anomaly_map.detach().cpu().numpy()[:, 0]
             labels = (seg.detach().cpu().numpy()[:, 0] > 0).astype(np.uint8)
-            y_cpu = y.detach().cpu().numpy()
 
             for i in range(scores.shape[0]):
-                score_map = scores[i]
-                label_map = labels[i]
-
-                all_scores.append(score_map.reshape(-1))
-                all_labels.append(label_map.reshape(-1))
-
-                if np.any(label_map > 0):
-                    tumor_examples.append(
-                        {
-                            "subject_id": batch["subject_id"][i],
-                            "z": int(batch["z"][i]),
-                            "t1": y_cpu[i, 0],
-                            "seg": label_map,
-                            "anomaly": score_map,
-                        }
-                    )
+                all_scores.append(scores[i].reshape(-1))
+                all_labels.append(labels[i].reshape(-1))
 
     all_scores = np.concatenate(all_scores, axis=0)
     all_labels = np.concatenate(all_labels, axis=0)
@@ -230,7 +280,7 @@ def main():
         "best_threshold": f"{best_thr:.6f}",
         "best_dice": f"{best_dice:.6f}",
     }
-    
+
     output_dir = infer_output_dir_from_ckpt(args.ckpt)
     print(f"Using output directory: {output_dir}")
 
@@ -245,24 +295,35 @@ def main():
     print(f"Saved metrics: {metrics_path}")
 
     overlay_dir = Path(output_dir) / "overlays"
-    tumor_examples = sorted(
-        tumor_examples,
-        key=lambda x: float(np.max(x["anomaly"])),
-        reverse=True,
-    )
+    sample_indices = _select_subject_samples(dataset, limit=3)
 
-    for example in tumor_examples[:max_overlays]:
-        save_brats_overlay(
-            t1_slice=example["t1"],
-            seg_slice=example["seg"],
-            anomaly_map=example["anomaly"],
-            out_dir=overlay_dir,
-            subject_id=example["subject_id"],
-            z=example["z"],
+    if sample_indices:
+        examples_by_modality = _collect_center_slice_examples(
+            model=model,
+            dataset=dataset,
+            sample_indices=sample_indices,
+            device=device,
+            use_amp=use_amp,
+            anomaly_mode=anomaly_mode,
         )
-        overlay_count += 1
 
-    print(f"Saved overlays: {overlay_count}")
+        t1_path = save_brats_focus_svg(
+            examples_by_modality["t1"],
+            out_dir=overlay_dir,
+            filename="t1_center_slice_overlays.svg",
+            modality_label="T1",
+        )
+        print(f"Saved overlay SVG: {t1_path}")
+
+        t2_path = save_brats_focus_svg(
+            examples_by_modality["t2"],
+            out_dir=overlay_dir,
+            filename="t2_center_slice_overlays.svg",
+            modality_label="T2",
+        )
+        print(f"Saved overlay SVG: {t2_path}")
+    else:
+        print("No center-slice examples were selected for overlay SVG export.")
 
 
 if __name__ == "__main__":
