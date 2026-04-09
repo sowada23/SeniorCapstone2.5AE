@@ -14,13 +14,13 @@ def _compute_shared_crop_bounds(examples, pad=30):
     mask = None
 
     for example in examples:
-        for key in ("input_center_t1", "true_t1", "pred_t1"):
+        for key in ("input_center", "true", "pred"):
             image = np.asarray(example[key])
             image_mask = np.isfinite(image) & (image > 0)
             mask = image_mask if mask is None else (mask | image_mask)
 
     if mask is None or not np.any(mask):
-        first = np.asarray(examples[0]["input_center_t1"])
+        first = np.asarray(examples[0]["input_center"])
         return 0, first.shape[0], 0, first.shape[1]
 
     rows = np.where(mask.any(axis=1))[0]
@@ -33,7 +33,7 @@ def _compute_shared_crop_bounds(examples, pad=30):
     return y0, y1, x0, x1
 
 
-def save_test_examples_svg(examples, out_dir, filename="t1_test_examples.svg"):
+def save_test_examples_svg(examples, out_dir, filename="test_examples.svg", modality_label="T1"):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / filename
@@ -46,21 +46,25 @@ def save_test_examples_svg(examples, out_dir, filename="t1_test_examples.svg"):
     if n_rows == 1:
         axes = np.expand_dims(axes, axis=0)
 
-    first = np.asarray(examples[0]["input_center_t1"])
-    y0, y1, x0, x1 = 0, first.shape[0], 0, first.shape[1]
+    y0, y1, x0, x1 = _compute_shared_crop_bounds(examples)
 
-    col_titles = ["Input Center T1", "True T1", "Predicted T1", "Absolute Error T1"]
+    col_titles = [
+        f"Input Center {modality_label}",
+        f"True {modality_label}",
+        f"Predicted {modality_label}",
+        f"Absolute Error {modality_label}",
+    ]
     for col_idx, title in enumerate(col_titles):
         axes[0, col_idx].set_title(title)
 
     for row_idx, example in enumerate(examples):
         images = [
-            example["input_center_t1"],
-            example["true_t1"],
-            example["pred_t1"],
-            example["abs_error_t1"],
+            example["input_center"],
+            example["true"],
+            example["pred"],
+            example["abs_error"],
         ]
-        patient = _patient_label(example["t1_path"])
+        patient = _patient_label(example["path"])
         z = example["z"]
 
         for col_idx, image in enumerate(images):
