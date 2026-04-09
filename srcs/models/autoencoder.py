@@ -13,7 +13,7 @@ def conv_block_2d(in_ch, out_ch):
 
 
 class AutoEncoder2D(nn.Module):
-    def __init__(self, in_channels=6, base=32, out_channels=2):
+    def __init__(self, in_channels=6, base=16, out_channels=2):
         super().__init__()
 
         self.enc1 = conv_block_2d(in_channels, base)
